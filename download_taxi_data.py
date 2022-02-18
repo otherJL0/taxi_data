@@ -2,7 +2,6 @@ import asyncio
 import itertools as it
 from typing import NamedTuple
 
-# from aiohttp import ClientTimeout, aiohttp.request
 import aiohttp
 import yarl
 from aiomultiprocess import Pool
@@ -54,7 +53,7 @@ async def download_files(metadata: list[MetaData]) -> None:
         _ = await pool.map(download_file, metadata)
 
 
-async def calculate_total_size() -> list[MetaData]:
+async def collect_valid_urls() -> list[MetaData]:
     taxis: list[str] = ["green", "yellow", "fh", "fhvhv"]
     years: list[str] = [str(year) for year in range(2009, 2022)]
     months: list[str] = [f"{month:02}" for month in range(1, 13)]
@@ -73,6 +72,9 @@ async def calculate_total_size() -> list[MetaData]:
 
 
 if __name__ == "__main__":
-    valid_files = asyncio.run(calculate_total_size())
-    print(valid_files)
+    valid_url_metadata: list[MetaData] = asyncio.run(collect_valid_urls())
+    for metadata in valid_url_metadata:
+        print(f"{metadata.url.path}:\t{metadata.size}")
+    print(f"{len(valid_url_metadata)} files found")
+    print(f"total size {sum(valid_url_metadata)}")
     # asyncio.run(download_files(valid_files))
