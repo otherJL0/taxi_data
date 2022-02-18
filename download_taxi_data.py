@@ -1,55 +1,74 @@
 import asyncio
-
-# import aioitertools.itertools as it
 import itertools as it
+from typing import NamedTuple
 
-from aiohttp import ClientTimeout, request
+# from aiohttp import ClientTimeout, aiohttp.request
+import aiohttp
+import yarl
 from aiomultiprocess import Pool
+from tqdm import tqdm
 
 BASE_URL: str = "https://s3.amazonaws.com/nyc-tlc/trip+data"
-CHUNK_SIZE = 10 * 1_000_000
+CHUNK_SIZE = 10 * 1_000_000  # TODO test with different sized chunks
 
 
-async def check_url(taxi: str, year: str, month: str) -> dict[str, int] | None:
-    file_name = f"{taxi}_tripdata_{year}-{month}.csv"
-    async with request("GET", f"{BASE_URL}/{file_name}") as resp:
-        if resp.status == 200 and resp.content_length is not None:
-            return {file_name: resp.content_length}
+class MetaData(NamedTuple):
+    url: yarl.URL
+    size: int
 
 
-async def download_file(file_name: str):
-    async with request(
-        "GET", f"{BASE_URL}/{file_name}", timeout=ClientTimeout(total=100 * 60)
+async def check_url(file_url: yarl.URL) -> MetaData | None:
+    """Ping file url to verify exisitance and grab size data"""
+    try:
+        async with aiohttp.request("GET", file_url) as resp:
+            if resp.status == 200 and resp.content_length is not None:
+                return MetaData(file_url, resp.content_length)
+    except aiohttp.ClientConnectionError:
+        return None
+
+
+async def download_file(metadata: MetaData):
+    """Given a verified file url, download the target file in chunks"""
+    async with aiohttp.request(
+        "GET", metadata.url, timeout=aiohttp.ClientTimeout(total=100 * 60)
     ) as resp:
+        # TODO introduce error handling instead of aborting
         if resp.status != 200:
-            print(f"{file_name} not valid")
+            print(f"{metadata.url.path} not valid")
             return
-        with open(f"data/{file_name}", "wb") as fd:
+
+        # TODO consider changing downloaded file path
+        with open(f"data/{metadata.url.path}", "wb") as fd:
             async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
                 _ = fd.write(chunk)
-        print(f"{file_name} downloaded!")
+        print(f"{metadata.url.path} downloaded!")
 
 
-def generate_file_name(taxi: str, year: str, month: str) -> str:
-    return f"{taxi}_tripdata_{year}-{month}.csv"
+def generate_file_url(taxi: str, year: str, month: str) -> yarl.URL:
+    """Generate target file url"""
+    return yarl.URL(f"{BASE_URL}/{taxi}_tripdata_{year}-{month}.csv")
 
 
-async def download_files(files: list[str]) -> None:
+async def download_files(metadata: list[MetaData]) -> None:
     async with Pool() as pool:
-        _ = await pool.map(download_file, files)
+        _ = await pool.map(download_file, metadata)
 
 
-async def calculate_total_size() -> dict[str, int]:
+async def calculate_total_size() -> list[MetaData]:
     taxis: list[str] = ["green", "yellow", "fh", "fhvhv"]
     years: list[str] = [str(year) for year in range(2009, 2022)]
     months: list[str] = [f"{month:02}" for month in range(1, 13)]
 
-    result: dict[str, int] = {}
+    file_urls: list[yarl.URL] = list(
+        it.starmap(generate_file_url, it.product(taxis, years, months))
+    )
+    result: list[MetaData] = []
     async with Pool() as pool:
-        combinations = list(it.product(taxis, years, months))
-        async for mapping in pool.starmap(check_url, combinations):
-            if mapping:
-                result = result | mapping
+        with tqdm(total=len(file_urls)) as pbar:
+            async for mapping in pool.map(check_url, file_urls):
+                pbar.update(1)
+                if mapping:
+                    result.append(mapping)
     return result
 
 
