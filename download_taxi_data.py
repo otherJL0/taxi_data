@@ -3,27 +3,37 @@ import itertools as it
 from typing import NamedTuple
 
 import aiohttp
-import yarl
 from aiomultiprocess import Pool
 from tqdm import tqdm
 
-BASE_URL: str = "https://s3.amazonaws.com/nyc-tlc/trip+data"
+BASE_URLS: list[str] = [
+    "https://s3.amazonaws.com/nyc-tlc/trip+data",
+    "https://nyc-tlc.s3.amazonaws.com/trip+data",
+]
 CHUNK_SIZE = 10 * 1_000_000  # TODO test with different sized chunks
 
 
 class MetaData(NamedTuple):
-    url: yarl.URL
+    path: str
+    url: str
     size: int
 
 
-async def check_url(file_url: yarl.URL) -> MetaData | None:
+async def check_url(file_path: str) -> MetaData | None:
     """Ping file url to verify exisitance and grab size data"""
     try:
-        async with aiohttp.request("GET", file_url) as resp:
+        url = f"{BASE_URLS[0]}/{file_path}"
+        async with aiohttp.request("GET", url) as resp:
             if resp.status == 200 and resp.content_length is not None:
-                return MetaData(file_url, resp.content_length)
+                return MetaData(file_path, url, resp.content_length)
     except aiohttp.ClientConnectionError:
-        return None
+        try:
+            url = f"{BASE_URLS[1]}/{file_path}"
+            async with aiohttp.request("GET", url) as resp:
+                if resp.status == 200 and resp.content_length is not None:
+                    return MetaData(file_path, url, resp.content_length)
+        except aiohttp.ClientConnectionError:
+            return None
 
 
 async def download_file(metadata: MetaData):
@@ -33,19 +43,20 @@ async def download_file(metadata: MetaData):
     ) as resp:
         # TODO introduce error handling instead of aborting
         if resp.status != 200:
-            print(f"{metadata.url.path} not valid")
+            print(f"{metadata.path} not valid")
             return
 
         # TODO consider changing downloaded file path
-        with open(f"data/{metadata.url.path}", "wb") as fd:
-            async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
-                _ = fd.write(chunk)
-        print(f"{metadata.url.path} downloaded!")
+        with open(f"data/{metadata.path}", "wb") as fd:
+            with tqdm(total=metadata.size) as pbar:
+                async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
+                    pbar.update(fd.write(chunk))
+        print(f"{metadata.path} downloaded!")
 
 
-def generate_file_url(taxi: str, year: str, month: str) -> yarl.URL:
+def generate_file_url(taxi: str, year: str, month: str) -> str:
     """Generate target file url"""
-    return yarl.URL(f"{BASE_URL}/{taxi}_tripdata_{year}-{month}.csv")
+    return f"{taxi}_tripdata_{year}-{month}.csv"
 
 
 async def download_files(metadata: list[MetaData]) -> None:
@@ -54,11 +65,12 @@ async def download_files(metadata: list[MetaData]) -> None:
 
 
 async def collect_valid_urls() -> list[MetaData]:
-    taxis: list[str] = ["green", "yellow", "fh", "fhvhv"]
+    # taxis: list[str] = ["green", "yellow", "fhv", "fhvhv"]
+    taxis: list[str] = ["fhv"]
     years: list[str] = [str(year) for year in range(2009, 2022)]
     months: list[str] = [f"{month:02}" for month in range(1, 13)]
 
-    file_urls: list[yarl.URL] = list(
+    file_urls: list[str] = list(
         it.starmap(generate_file_url, it.product(taxis, years, months))
     )
     result: list[MetaData] = []
@@ -73,8 +85,5 @@ async def collect_valid_urls() -> list[MetaData]:
 
 if __name__ == "__main__":
     valid_url_metadata: list[MetaData] = asyncio.run(collect_valid_urls())
-    for metadata in valid_url_metadata:
-        print(f"{metadata.url.path}:\t{metadata.size}")
     print(f"{len(valid_url_metadata)} files found")
-    print(f"total size {sum(valid_url_metadata)}")
-    # asyncio.run(download_files(valid_files))
+    asyncio.run(download_files(valid_url_metadata))
