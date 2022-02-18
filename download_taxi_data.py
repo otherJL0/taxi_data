@@ -2,8 +2,8 @@ import asyncio
 import itertools as it
 from typing import NamedTuple
 
-import aiohttp
-import aiomultiprocess
+from aiohttp import ClientConnectionError, ClientSession, ClientTimeout, request
+from aiomultiprocess import Pool
 from tqdm import tqdm
 
 BASE_URL: str = "https://s3.amazonaws.com/nyc-tlc/trip+data"
@@ -20,17 +20,17 @@ async def check_url(file_path: str) -> MetaData | None:
     """Ping file url to verify exisitance and grab size data"""
     try:
         url = f"{BASE_URL}/{file_path}"
-        async with aiohttp.request("GET", url) as resp:
+        async with request("GET", url) as resp:
             if resp.status == 200 and resp.content_length is not None:
                 return MetaData(file_path, url, resp.content_length)
-    except aiohttp.ClientConnectionError:
+    except ClientConnectionError:
         return None
 
 
 async def download_file(metadata: MetaData):
     """Given a verified file url, download the target file in chunks"""
-    async with aiohttp.request(
-        "GET", metadata.url, timeout=aiohttp.ClientTimeout(total=100 * 60)
+    async with request(
+        "GET", metadata.url, timeout=ClientTimeout(total=100 * 60)
     ) as resp:
         # TODO introduce error handling instead of aborting
         if resp.status != 200:
@@ -52,7 +52,7 @@ def generate_file_url(taxi: str, year: str, month: str) -> str:
 
 async def download_files(metadata: list[MetaData]) -> None:
     # TODO experiment with pool parameters
-    async with aiomultiprocess.Pool(
+    async with Pool(
         processes=2, maxtasksperchild=8, queuecount=2, childconcurrency=4
     ) as pool:
         _ = await pool.map(download_file, metadata)
@@ -68,7 +68,7 @@ async def collect_valid_urls() -> list[MetaData]:
         it.starmap(generate_file_url, it.product(taxis, years, months))
     )
     result: list[MetaData] = []
-    async with aiomultiprocess.Pool() as pool:
+    async with Pool() as pool:
         with tqdm(total=len(file_urls)) as pbar:
             async for mapping in pool.map(check_url, file_urls):
                 pbar.update(1)
