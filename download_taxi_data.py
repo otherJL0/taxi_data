@@ -1,6 +1,7 @@
 import asyncio
 from itertools import product, starmap
 from typing import NamedTuple
+from os import mkdir
 
 from aiohttp import ClientConnectionError, ClientTimeout, request
 from aiomultiprocess import Pool
@@ -113,5 +114,9 @@ async def download_files(metadata: list[MetaData]) -> None:
 
 
 if __name__ == "__main__":
+    try:
+        mkdir("data")
+    except FileExistsError:
+        pass
     valid_url_metadata = asyncio.run(validate_candidate_endpoints())
     asyncio.run(download_files(valid_url_metadata))
