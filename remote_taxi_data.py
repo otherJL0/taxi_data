@@ -1,18 +1,25 @@
+from multiprocessing import Pool
 from pathlib import Path
 
 import pyarrow.dataset as ds
 import pyarrow.feather as feather
 import pyarrow.parquet as pq
 from pyarrow import fs
-from rich.progress import track
 
-s3 = fs.S3FileSystem(anonymous=True)
-taxi_dataset = ds.dataset("nyc-tlc/trip data/", format="parquet", filesystem=s3)
+S3 = fs.S3FileSystem(anonymous=True)
 
-pq_files = [pqf for pqf in taxi_dataset.files if pqf.endswith("parquet")]
-for pq_file in track(pq_files, description="Reading parquet files..."):
 
-    table = pq.read_table(pq_file, filesystem=s3)
+def download_parquet_file(pq_file: Path) -> None:
     feather.write_feather(
-        table, f"feather/{Path(pq_file).name}.feather", compression="uncompressed"
+        pq.read_table(pq_file, filesystem=S3),
+        f"feather/{pq_file.name}.feather",
+        compression="uncompressed",
     )
+
+
+if __name__ == "__main__":
+    taxi_dataset = ds.dataset("nyc-tlc/trip data/", format="parquet", filesystem=S3)
+
+    pq_files = [Path(pqf) for pqf in taxi_dataset.files if pqf.endswith("parquet")]
+    with Pool() as p:
+        p.map(download_parquet_file, pq_files)
