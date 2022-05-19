@@ -1,7 +1,7 @@
 import asyncio
 from itertools import product, starmap
-from typing import NamedTuple
 from os import mkdir
+from typing import NamedTuple
 
 from aiohttp import ClientConnectionError, ClientTimeout, request
 from aiomultiprocess import Pool
@@ -22,7 +22,7 @@ class MetaData(NamedTuple):
 
 def generate_file_path(taxi: str, year: str, month: str) -> str:
     """Generate target file path"""
-    return f"{taxi}_tripdata_{year}-{month}.csv"
+    return f"{taxi}_tripdata_{year}-{month}.parquet"
 
 
 def generate_candidate_file_paths() -> list[str]:
@@ -30,8 +30,7 @@ def generate_candidate_file_paths() -> list[str]:
     https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page
     """
     taxis: list[str] = ["green", "yellow", "fhv", "fhvhv"]
-    taxis: list[str] = ["fhv"]  # NOTE remove when downloading all files
-    years: list[str] = [str(year) for year in range(2009, 2022)]
+    years: list[str] = [str(year) for year in range(2009, 2023)]
     months: list[str] = [f"{month:02}" for month in range(1, 13)]
 
     return list(starmap(generate_file_path, product(taxis, years, months)))
