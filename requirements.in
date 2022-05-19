@@ -1,0 +1,7 @@
+aiohttp[speedups]
+aiomultiprocess
+tqdm
+rich
+pyarrow
+pip-tools
+memray
