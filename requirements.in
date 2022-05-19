@@ -5,3 +5,6 @@ rich
 pyarrow
 pip-tools
 memray
+duckdb
+ipython
+ptpython
