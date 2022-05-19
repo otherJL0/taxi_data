@@ -4,7 +4,9 @@ tqdm
 rich
 pyarrow
 pip-tools
-memray
 duckdb
 ipython
 ptpython
+euporie
+thx
+duckdb
