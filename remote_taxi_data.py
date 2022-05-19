@@ -11,8 +11,8 @@ S3 = fs.S3FileSystem(anonymous=True)
 
 def download_parquet_file(pq_file: Path) -> None:
     feather.write_feather(
-        pq.read_table(pq_file, filesystem=S3),
-        f"feather/{pq_file.name}.feather",
+        pq.read_table(str(pq_file), filesystem=S3),
+        f"feather/{pq_file.stem}.feather",
         compression="uncompressed",
     )
 
